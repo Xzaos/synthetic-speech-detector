@@ -1,0 +1,33 @@
+[project]
+name = "synthdet"
+version = "0.1.0"
+description = "Does a real-vs-synthetic Hindi speech detector trained on one TTS system generalise to another?"
+requires-python = ">=3.10"
+dependencies = [
+    "numpy>=1.24",
+    "scipy",
+    "torch>=2.2",
+    "torchaudio>=2.2",
+    "transformers>=4.46,<5",
+    "soundfile",
+    "httpx",
+    "scikit-learn",
+    # FLEURS prepare code and manifest helpers are shared with the benchmark repo
+    "asrbench[models] @ git+https://github.com/Xzaos/indic-asr-bench.git",
+]
+
+[project.optional-dependencies]
+dev = ["pytest"]
+
+[project.scripts]
+synthdet = "synthdet.cli:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
