@@ -1,8 +1,16 @@
 # synthetic-speech-detector
 
-Does a real-vs-synthetic Hindi speech detector trained on one TTS system generalise to another it never saw? I train on real FLEURS Hindi against facebook/mms-tts-hin, then test on MMS again (seen) and on Sarvam Bulbul (unseen), clean and through a phone-line channel.
+Does a real-vs-synthetic Hindi speech detector trained on one TTS system generalise to another it never saw? I trained on real FLEURS Hindi against facebook/mms-tts-hin, then tested on MMS again (seen) and on Sarvam Bulbul (unseen), clean and through a phone-line channel. The numbers below are from one run on a Kaggle T4 (`results/report.md`, `results/report.json`).
 
-No run has happened yet, so every result cell below is `_`. The numbers will come from `results/report.json` and `results/report.md` after `scripts/run_kaggle.sh` finishes on a Kaggle T4.
+## What the run found
+
+The CNN separates real from MMS perfectly (EER 0.000, AUC 1.000) and does much worse on Bulbul: EER 0.185 [0.150, 0.230], AUC 0.909 [0.881, 0.935]. The AUC makes that look like a mild drop. It is worse than that at the operating point. The threshold is set at the validation EER, and at that threshold the CNN passes 94% of Bulbul fakes as real, while it passes 2% of MMS fakes and rejects none of the real clips. The ranking carries over to a new generator, but the score scale does not, so a threshold tuned on one generator is useless on the other.
+
+The cheap-stats baseline, a logistic regression on nine utterance statistics, generalises better than the CNN: unseen EER 0.080 [0.055, 0.115], AUC 0.949 [0.925, 0.971]. The leak check fired (its AUC on MMS is 0.996, the cutoff was 0.8). A model with no access to fine spectro-temporal detail separates real from fake almost perfectly on both generators, so a large part of what both models learn is probably FLEURS recording conditions against any TTS output, and not synthesis artifacts. Both models partly detect what the real data sounds like.
+
+I have not run an ablation over the nine statistics, so I can't say which ones carry the separation. The report does show two things that differ by class even after the controls. Mean raw RMS (before normalisation, which the baseline sees and the CNN does not) is 0.042 for real, 0.153 for MMS and 0.114 for Bulbul. Mean trimmed duration is 10.7 s for real and 9.0 s for both fake sets. Those are candidates, not findings.
+
+The phone channel moves the two generators in opposite directions for the CNN. Unseen EER improves from 0.185 to 0.120 [0.085, 0.160], while seen EER worsens from 0.000 to 0.065 [0.040, 0.090]. That fits the CNN having leaned on high-band cues specific to MMS that the 300 to 3400 Hz bandpass removes, but the run doesn't test that directly. The baseline's EER hardly moves under the channel (0.040 to 0.030 seen, 0.080 to 0.085 unseen), yet its threshold breaks: it passes 100% of MMS fakes and 97.5% of Bulbul fakes as real, with no real clip rejected.
 
 ## Results
 
@@ -10,27 +18,35 @@ EER (lower is better) and ROC AUC for real vs fake, 95% bootstrap interval over 
 
 | model | condition | EER | AUC |
 |---|---|---|---|
-| baseline (utterance stats) | seen generator (MMS) | _ | _ |
-| baseline (utterance stats) | unseen generator (Bulbul) | _ | _ |
-| baseline (utterance stats) | seen, phone channel | _ | _ |
-| baseline (utterance stats) | unseen, phone channel | _ | _ |
-| CNN detector | seen generator (MMS) | _ | _ |
-| CNN detector | unseen generator (Bulbul) | _ | _ |
-| CNN detector | seen, phone channel | _ | _ |
-| CNN detector | unseen, phone channel | _ | _ |
+| baseline (utterance stats) | seen generator (MMS) | 0.040 [0.020, 0.060] | 0.996 [0.992, 0.998] |
+| baseline (utterance stats) | unseen generator (Bulbul) | 0.080 [0.055, 0.115] | 0.949 [0.925, 0.971] |
+| baseline (utterance stats) | seen, phone channel | 0.030 [0.010, 0.050] | 0.998 [0.995, 0.999] |
+| baseline (utterance stats) | unseen, phone channel | 0.085 [0.060, 0.115] | 0.960 [0.941, 0.978] |
+| CNN detector | seen generator (MMS) | 0.000 [0.000, 0.000] | 1.000 [1.000, 1.000] |
+| CNN detector | unseen generator (Bulbul) | 0.185 [0.150, 0.230] | 0.909 [0.881, 0.935] |
+| CNN detector | seen, phone channel | 0.065 [0.040, 0.090] | 0.987 [0.979, 0.993] |
+| CNN detector | unseen, phone channel | 0.120 [0.085, 0.160] | 0.945 [0.920, 0.966] |
 
-The decision threshold is the score at the validation EER point (validation clips are real vs MMS only). Applied to the test sets:
+The threshold is the score at the validation EER point (clean validation clips, real vs MMS only): 0.057 for the baseline and 11.640 for the CNN. Rates on the test sets at that threshold. False-accept is a fake passed as real, false-reject is a real clip flagged as fake.
 
-| model | false-accept rate on Bulbul (fake passed as real) | same, phone channel |
-|---|---|---|
-| baseline | _ | _ |
-| CNN detector | _ | _ |
+| model | condition | false-accept rate | false-reject rate |
+|---|---|---|---|
+| baseline | seen (MMS) | 0.045 | 0.030 |
+| baseline | unseen (Bulbul) | 0.320 | 0.030 |
+| baseline | seen, phone channel | 1.000 | 0.000 |
+| baseline | unseen, phone channel | 0.975 | 0.000 |
+| CNN detector | seen (MMS) | 0.020 | 0.000 |
+| CNN detector | unseen (Bulbul) | 0.940 | 0.000 |
+| CNN detector | seen, phone channel | 0.370 | 0.000 |
+| CNN detector | unseen, phone channel | 0.885 | 0.000 |
 
-Wall-clock for the whole script on the T4: _. Baseline leak check: _ (the report sets it to "leaks" if the baseline's AUC on MMS is 0.8 or higher, and if it does, this README has to say the task leaks shortcuts).
+Setup facts from the report: 715 training sentences and 83 validation sentences (each with a real and an MMS clip), 200 test sentences, none of them also in the training set. The CNN has 91,249 parameters, ran all 120 epochs in 179 s, and the best epoch by validation EER was 93. The whole script took 626 s.
 
 ## Design
 
 The data is paired by sentence. I sample 800 FLEURS hi_in train clips and 200 test clips. MMS speaks the same 800 train sentences and the same 200 test sentences, and Bulbul speaks the same 200 test sentences. For each real clip there is a fake clip with the same text, so what is said cannot separate the classes. Ten percent of the train sentences are held out for validation, along with both their real and fake clips. FLEURS repeats some sentences across speakers, so the split is by sentence text, not by clip.
+
+The report counts 715 + 83 = 798 training sentences, not 800. I haven't checked where the other two went.
 
 Fake clips are named after the real clip they pair with, and a missing one stops the run instead of being dropped, since dropping pairs would quietly change the test set.
 
@@ -65,9 +81,15 @@ Locally, `pip install -e .[dev]` and `pytest -q`. The tests use synthetic audio 
 
 ## Limitations
 
-- MMS has a single voice. A detector trained against it can learn "this is MMS's speaker" and not "this is synthetic", and the seen-generator score cannot tell those apart. The unseen-generator test is meant to expose exactly that, because Bulbul is a different system with a different voice for each sentence.
-- There are only two generators. One seen and one unseen system is a single data point about generalisation, not an estimate of it, and Bulbul may be easy or hard for reasons that have nothing to do with TTS in general.
-- FLEURS is read speech recorded for a benchmark. Conversational or noisy real speech is not covered.
-- Real and fake differ in speaker count as well as in origin: the real side has many speakers and each Bulbul clip uses one of 37 voices.
-- The phone channel is one fixed degradation applied after synthesis, not a real telephone recording.
-- Bulbul voices were not checked individually for Hindi quality.
+- Validation EER for the CNN reached 0.000, so checkpoint selection by validation EER was uninformative. Ties were broken by validation loss, which is why epoch 93 was kept, and the validation set (real vs MMS) says nothing about an unseen generator.
+- There is one real corpus. Real-side shortcuts (FLEURS microphones, rooms, speakers) can't be separated from fake-side artifacts, because every real clip comes from the same place.
+- There are only two generators. One seen and one unseen system is a single data point about generalisation, and Bulbul may be easy or hard for reasons that have nothing to do with TTS in general.
+- MMS has a single voice, so "detects MMS's speaker" is a confound. The Bulbul test was meant to expose it, and the CNN's collapse there is consistent with it, though the run doesn't prove it.
+- The real side has many speakers and each Bulbul clip uses one of 37 voices.
+- It is one training seed and one run, so differences of a few points between conditions are within what I'd expect from noise I haven't measured. The intervals cover resampling of test clips only.
+- The phone channel is one fixed degradation applied after synthesis, and FLEURS is read speech, so conversational speech is not covered.
+- I did not check the Bulbul voices individually for Hindi quality.
+
+## Next steps
+
+A second real corpus with different recording conditions would show how much of the separation is FLEURS itself. After that, more generators with leave-one-generator-out training would turn the single seen/unseen comparison into an estimate, and calibration across generators (so one threshold works on a system the detector hasn't seen) is the problem the 94% false-accept rate points at.
