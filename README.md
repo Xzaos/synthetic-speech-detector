@@ -46,7 +46,7 @@ Setup facts from the report: 715 training sentences and 83 validation sentences 
 
 The data is paired by sentence. I sample 800 FLEURS hi_in train clips and 200 test clips. MMS speaks the same 800 train sentences and the same 200 test sentences, and Bulbul speaks the same 200 test sentences. For each real clip there is a fake clip with the same text, so what is said cannot separate the classes. Ten percent of the train sentences are held out for validation, along with both their real and fake clips. FLEURS repeats some sentences across speakers, so the split is by sentence text, not by clip.
 
-The report counts 715 + 83 = 798 training sentences, not 800. I haven't checked where the other two went.
+The report counts 715 + 83 = 798 training sentences, not 800. asrbench prepare dropped two clips for being longer than 30 s (the Kaggle log printed "dropped 2 hi clips longer than 30 s").
 
 Fake clips are named after the real clip they pair with, and a missing one stops the run instead of being dropped, since dropping pairs would quietly change the test set.
 
