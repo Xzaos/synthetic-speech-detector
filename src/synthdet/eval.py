@@ -147,3 +147,59 @@ def write_report(rep: dict, out_dir: str) -> None:
     slim = json.loads(json.dumps(rep))
     (out / "report.json").write_text(json.dumps(slim, indent=1), encoding="utf-8")
     (out / "report.md").write_text(markdown_report(rep), encoding="utf-8")
+
+
+def clip_summary(clips) -> dict:
+    d = np.array([len(c["wave"]) / 16000 for c in clips])
+    r = np.array([c["raw_rms"] for c in clips])
+    return {"n": len(clips), "mean_duration_s": float(d.mean()), "mean_raw_rms": float(r.mean())}
+
+
+def run_eval(data_dir: str, results_dir: str, n_boot: int = 1000) -> dict:
+    import torch
+
+    from .data import fake_items, load_clips, real_items, split_train_val, text_overlap, with_channel
+    from .model import Detector
+    from .train import baseline_scores, detector_scores
+
+    res = Path(results_dir)
+    base = json.loads((res / "baseline.json").read_text(encoding="utf-8"))
+    tmeta = json.loads((res / "train_meta.json").read_text(encoding="utf-8"))
+    train_real = real_items(data_dir, "train")
+    train_rows, val_rows = split_train_val(train_real)
+    real_rows = real_items(data_dir, "test")
+    sets = {
+        "real": load_clips(real_rows),
+        "mms": load_clips(fake_items(data_dir, "mms", "test", real_rows)),
+        "bulbul": load_clips(fake_items(data_dir, "bulbul", "test", real_rows)),
+    }
+    chan = {}
+
+    def get(clips, channel):
+        if not channel:
+            return clips
+        if id(clips) not in chan:
+            chan[id(clips)] = with_channel(clips)
+        return chan[id(clips)]
+
+    dev = "cuda" if torch.cuda.is_available() else "cpu"
+    net = Detector().to(dev)
+    net.load_state_dict(torch.load(res / "detector.pt", map_location=dev))
+    models = {
+        "baseline": (lambda clips, ch: baseline_scores(base, get(clips, ch)), base["threshold"]),
+        "detector": (lambda clips, ch: detector_scores(net, get(clips, ch), dev), tmeta["threshold"]),
+    }
+    rep = {"meta": {
+        "n_train_pairs": len(train_rows), "n_val_pairs": len(val_rows), "n_test": len(real_rows),
+        "params": tmeta["params"], "epochs_run": tmeta["epochs_run"], "best_epoch": tmeta["best_epoch"],
+        "train_seconds": tmeta["train_seconds"], "val_eer_detector": tmeta["val_eer"], "val_eer_baseline": base["val_eer"],
+        "test_sentences_also_in_train": text_overlap(real_rows, train_real),
+        "clip_summary": {k: clip_summary(v) for k, v in sets.items()},
+        "bootstrap_resamples": n_boot,
+    }}
+    for name, (fn, thr) in models.items():
+        rep[name] = evaluate_model(name, fn, thr, sets["real"], {"mms": sets["mms"], "bulbul": sets["bulbul"]}, n_boot)
+    rep["baseline_leaks"] = leak_flag(rep["baseline"])
+    write_report(rep, results_dir)
+    print(markdown_report(rep))
+    return rep
