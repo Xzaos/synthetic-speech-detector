@@ -1,4 +1,4 @@
-# synthetic-speech-detector
+# Synthetic Speech Detector
 
 Does a real-vs-synthetic Hindi speech detector trained on one TTS system generalise to another it never saw? I trained on real FLEURS Hindi against facebook/mms-tts-hin, then tested on MMS again (seen) and on Sarvam Bulbul (unseen), clean and through a phone-line channel. The numbers below are from one run on a Kaggle T4 (`results/report.md`, `results/report.json`).
 
